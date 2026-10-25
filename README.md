@@ -19,12 +19,12 @@
 >   official SLOOP reads OUT as OFF. `tests/remote_out_test.c` checks it on the host (part of `tests/run_tests.sh`).
 > - **Tested** (2026-10-25): built with JieLi's toolchain and SDK V1.2.1 (the stock 2.8.1 built the same way
 >   matches isod89's release apart from the package header); SLOOP's host tests pass, apart from two
->   ThreadSanitizer checks that fail the same way on unmodified SLOOP inside WSL. The first version (knobs only as
->   SLOOP's page read them, no MASTER) installed on a real FM-1 (backed up first): with OUT 16, its keys, buttons
->   and knobs seen arriving on channel 16, driving `studio/` on the Studio.
-> - **Not tested on a real FM-1 yet:** this version's every-turn knobs and MASTER (host test only); every button
->   and knob one by one (GLO, HOME, SELECT and KNOB 1–3 were seen); OUT on channels other than 16; REMOTE IN after
->   this change (unchanged code, not re-tried on the FM-1).
+>   ThreadSanitizer checks that fail the same way on unmodified SLOOP inside WSL. Installed on a real FM-1 (backed up
+>   first) with OUT 16: keys, buttons (GLO, HOME, PLAY) and knobs seen arriving on channel 16, driving `studio/` on
+>   the Studio; KNOB 4 turned on the TRACKS screen (which doesn't use it) sent as CC 122; MASTER swept up and down
+>   sent as CC 123 from 0 to 126, in steps of 2–3.
+> - **Not tested on a real FM-1 yet:** every button and knob one by one (GLO, HOME, PLAY, SELECT and KNOB 1–4 were
+>   seen); OUT on channels other than 16; REMOTE IN after this change (unchanged code, not re-tried on the FM-1).
 > - Build it as SLOOP builds ([BUILDING.md](BUILDING.md)); install the `.fwsc` like any SLOOP update.
 
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
