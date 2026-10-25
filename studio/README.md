@@ -6,7 +6,8 @@ FM-1 Companion Studio (a Raspberry Pi 3 B+ with a 3.5" 480×320 touchscreen), pl
 It's SLOOP's own code: its sound engines, sequencer and screens, compiled for the Pi through the harness SLOOP's
 tests use (`tests/ui_pages_test.c`). Nothing is emulated.
 
-**Status: in development, not released.** See *Tested* below for what has been tried on the real Studio.
+**Status:** works with the FM-1 Companion's Studio v1.4 or later; the shared clock with X0X (below) needs the
+Companion from its main branch after Studio v1.5. See *Tested* below for what has been tried on the real Studio.
 
 ## How it works
 
@@ -20,7 +21,15 @@ tests use (`tests/ui_pages_test.c`). Nothing is emulated.
   (notes 36–62) go out on channel 16; the Companion passes FM-1 A's MIDI to this program through a FIFO.
 - **Saved:** the working project (tracks, sounds, steps, the song's settings, in SLOOP's own project format) in
   `~/.local/share/sloop-remote-out/project.bin`, a few seconds after a change and when it stops; loaded at the start.
-  SLOOP's four project slots, user presets and sample slots are not saved yet.
+  SLOOP's four project slots, user presets and sample slots are not saved yet. Two of SLOOP's device settings are
+  kept next to it in `settings.bin`: GLO › SYSTEM › SYNC and GLO › MIDI 3 › CLK OUT.
+- **Clock, with another app on the Studio** (such as
+  [X0X for the FM-1 Companion Studio](https://github.com/xoxoaudiolabs/fm1-x0x-companion-studio)): the Companion
+  runs both at once and connects each one's MIDI clock to the other, as two FM-1s cabled both ways. On the Studio,
+  SLOOP's CLK OUT starts **ON**, so SLOOP leads: its PLAY starts both from the top, its tempo (GLO + SELECT) is
+  both apps' tempo, its STOP stops both. To have the other app lead, set SYNC to **USB**. An app follows the
+  other's clock only while the other plays, so one playing on its own isn't pulled off its beat when the other
+  opens.
 
 ## Build (on the Studio)
 
@@ -58,7 +67,20 @@ Margins on the Studio (2026-10-25): < HOME, HOLD OFF and the + / − (its level 
 stream). Turned on again from PLAY SLOOP after a Companion restart, it came back with its saved project (a changed
 track 1 sound kept).
 
-**Not tested yet:** the MIXER tab's SLOOP slider; the project loading back after a reboot of the Studio.
+Clock with X0X (2026-10-25):
+- By hand, from FM-1 A through the Companion's PLAY SLOOP and PLAY X0X tiles: both running at once, SLOOP leading
+  (the default), playing together in time by ear. A stutter in X0X when SLOOP opened was found this way and fixed
+  (X0X caught SLOOP's clock mid-bar); by hand afterwards, it was gone.
+- By a script on the Studio, each app's sound recorded: X0X following SLOOP at 120 and 130 BPM, through STOP and
+  PLAY, with no drift (each bar the same length in both); SLOOP following X0X the same way, with SYNC on USB. Two
+  X0Xs, one following the other, in one recording: the follower 9–13 ms after the leader on average, about 8–9 ms
+  of jitter. X0X kept a steady beat while SLOOP was opened and closed next to it.
+
+**Not tested yet:**
+- The MIXER tab's SLOOP slider; the project loading back after a reboot of the Studio.
+- SLOOP following X0X (SYNC on USB) by hand: only by the script.
+- Turning off the leading app (HOLD OFF) while both play: the other should carry on at its own tempo, after a
+  stop of about half a second.
 
 ## License
 
