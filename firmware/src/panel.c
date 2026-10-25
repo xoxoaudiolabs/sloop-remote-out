@@ -52,14 +52,17 @@ UI_SMALL static uint32_t panel_btn_of(uint32_t matrix_id)        /* label of a m
 
 UI_SMALL static void panel_led(uint32_t label, int on) { fm1_led_key(panel.btn[label], on); }
 
-/* (remote-out) GLO > MIDI 3 > REMOTE = OUT n: the panel also goes out on channel n, for a copy of SLOOP somewhere
- * else (the FM-1 Companion Studio): the 14 buttons as REMOTE IN reads them (CC 102 + label in B_* order, 127 down,
- * 0 up), the 27 keys as notes 36 + key (100, off) and the 7 knobs as CC 116 + role in EN_* order, 64 + the steps
- * (panel_enc). The FM-1 plays and shows everything as always. The audio ISR owns the MIDI ring's write end, so the
- * UI's events go in with the interrupts off */
+/* (remote-out) GLO > MIDI 3 > REMOTE = OUT n: the panel also goes out on channel n, for a copy of SLOOP (or another
+ * firmware) somewhere else (the FM-1 Companion Studio): the 14 buttons as REMOTE IN reads them (CC 102 + label in
+ * B_* order, 127 down, 0 up), the 27 keys as notes 36 + key (100, off), the 7 knobs as CC 116 + role in EN_* order,
+ * 64 + the steps, every turn whatever the page (remote_out_poll takes them; panel_enc reads them from there), and
+ * MASTER as CC 123, 0..127. The FM-1 plays and shows everything as always. The audio ISR owns the MIDI ring's
+ * write end, so the UI's events go in with the interrupts off */
 #define REMOTE_OUT_CC 116u
+#define REMOTE_OUT_MASTER 123u
 #define REMOTE_OUT_NOTE 36u
 static uint32_t rout_btn, rout_keys;             /* what was last sent: labels down, keys down */
+static int32_t rout_enc[7], rout_master = -1;    /* steps taken, not yet read (by matrix encoder); MASTER sent */
 UI_SMALL static uint32_t remote_out_ch(void)     /* the channel 0..15, or 0xFF: REMOTE is not OUT */
 {
     return song.g[G_RMCH] > 16 && song.g[G_RMCH] <= 32 ? (uint32_t)song.g[G_RMCH] - 17u : 0xFFu;
@@ -70,18 +73,38 @@ UI_SMALL static void remote_out_msg(uint32_t st, uint32_t d1, uint32_t d2)
     midi_out_event((st >> 4) | st << 8 | (d1 & 127u) << 16 | (d2 & 127u) << 24);
     fm1_irq_on();
 }
-UI_SMALL static void remote_out_knob(uint32_t role, int32_t s)
-{
-    uint32_t ch = remote_out_ch();
-    if (ch <= 15u)
-        remote_out_msg(0xB0u | ch, REMOTE_OUT_CC + role, (uint32_t)(64 + (s > 63 ? 63 : s < -63 ? -63 : s)));
-}
-UI_SMALL static void remote_out_poll(void)       /* every UI pass (ui_input): the buttons and keys that changed */
+UI_SMALL static void remote_out_poll(void)       /* every UI pass (ui_input): buttons, keys, knobs, MASTER */
 {
     uint32_t ch = remote_out_ch(), btn = 0, keys = fm1_in.notes, l;
+    int32_t m;
     if (ch > 15u) {
         rout_btn = rout_keys = 0;
+        rout_master = -1;
+        for (l = 0; l < 7u; l++)
+            rout_enc[l] = 0;
         return;
+    }
+    for (l = 0; l < NE; l++) {                   /* every knob turned, on whatever page: out, and kept for panel_enc */
+        int32_t s = fm1_enc_take(panel.enc[l]), v = s * panel.dir[l];
+        if (s) {
+            rout_enc[panel.enc[l]] += s;
+            remote_out_msg(0xB0u | ch, REMOTE_OUT_CC + l, (uint32_t)(64 + (v > 63 ? 63 : v < -63 ? -63 : v)));
+        }
+    }
+    {                                            /* the knob's position again (main.c: master_q12 = k10 * k10 >> 8) */
+        uint32_t q = (uint32_t)song.master_q12 << 8, lo = 0, hi = 1024u, mid;
+        while (lo + 1u < hi) {
+            mid = (lo + hi) / 2u;
+            if (mid * mid <= q)
+                lo = mid;
+            else
+                hi = mid;
+        }
+        m = (int32_t)(lo * 127u / 1023u);
+    }
+    if (rout_master < 0 || m >= rout_master + 2 || m + 2 <= rout_master || ((m == 0 || m == 127) && m != rout_master)) {
+        rout_master = m;                         /* (moved 2 or more, or to an end: its own jitter stays home) */
+        remote_out_msg(0xB0u | ch, REMOTE_OUT_MASTER, (uint32_t)m);
     }
     for (l = 0; l < NB; l++)
         if (fm1_in.buttons & (1u << panel.btn[l]))
@@ -106,11 +129,14 @@ UI_SMALL static int32_t panel_enc(uint32_t role)
     int32_t s;
     if ((enc_hold >> role) & 1u)
         return 0;
-    s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
-    if (s) {
-        ui_input_ms = fm1_ms;                      /* a knob turning is not idle either: autosave waits */
-        remote_out_knob(role, s);                  /* (remote-out) REMOTE OUT: the steps go out too */
+    if (remote_out_ch() <= 15u) {              /* (remote-out) REMOTE OUT took the steps already (remote_out_poll) */
+        s = rout_enc[panel.enc[role]] * panel.dir[role];
+        rout_enc[panel.enc[role]] = 0;
+    } else {
+        s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
     }
+    if (s)
+        ui_input_ms = fm1_ms;                      /* a knob turning is not idle either: autosave waits */
     return s;
 }
 
