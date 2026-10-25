@@ -11,6 +11,11 @@ static const char *const N_LPOL[] = {"BI", "UNI"};
 /* GLO > MIDI (2.6): a synth track's MIDI channel, and the other channels */
 static const char *const N_SECT[] = {"A", "B", "C", "D", 0};   /* SAVE > SECTION (2.7): the slot as its section */
 static const char *const N_MCH[] = {"OFF", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"};
+/* (remote-out) GLO > MIDI 3 > REMOTE: IN n, the buttons from MIDI (2.7); OUT n, the panel to MIDI (panel.c remote_out_*) */
+static const char *const N_RMT[] = {"OFF", "IN 1", "IN 2", "IN 3", "IN 4", "IN 5", "IN 6", "IN 7", "IN 8", "IN 9", "IN 10",
+                                    "IN 11", "IN 12", "IN 13", "IN 14", "IN 15", "IN 16", "OUT 1", "OUT 2", "OUT 3", "OUT 4",
+                                    "OUT 5", "OUT 6", "OUT 7", "OUT 8", "OUT 9", "OUT 10", "OUT 11", "OUT 12", "OUT 13",
+                                    "OUT 14", "OUT 15", "OUT 16"};
 static const char *const N_MOTH[] = {"SEL", "OFF"};
 /* GLO > TEXTURE (2.6, fx.c texture_*): the bed's sources (the user slots last), its movement's length, when it plays */
 static const char *const N_TXSRC[] = {"OFF", "VINYL", "TAPE", "RAIN", "WIND", "RADIO", "ROOM", "USR1", "USR2", "USR3", "USR4"};
@@ -201,7 +206,7 @@ static const param_desc_t GP[G_COUNT] = {
     [G_FXCH] = PE("FX CH", N_MCH, 0),
     [G_DRMAP] = PE("DR MAP", N_DRMAP, 0),
     [G_CLKOUT] = PE("CLOCK", N_CLKOUT, 0),       /* 2.7, GLO > MIDI 3: MIDI clock and START / STOP out on USB (seq.c) */
-    [G_RMCH] = PE("REMOTE", N_MCH, 0),           /* 2.7, GLO > MIDI 3: the buttons over MIDI (CC 102..115, seq.c remote_cc) */        /* 2.7, GLO > MIDI 3: MIDI notes -> drum sounds (seq.c midi_drum_lane) */            /* 2.7, GLO > MIDI 3: the punch-in FX's channel (seq.c midi_fx) */
+    [G_RMCH] = PE("REMOTE", N_RMT, 0),           /* 2.7, GLO > MIDI 3: the buttons over MIDI (CC 102..115, seq.c remote_cc) */        /* 2.7, GLO > MIDI 3: MIDI notes -> drum sounds (seq.c midi_drum_lane) */            /* 2.7, GLO > MIDI 3: the punch-in FX's channel (seq.c midi_fx) */
     [G_BEND] = PD("BEND", F_SEMI, 1, 12, 2),      /* 2.6, GLO > MIDI 2: MIDI pitch bend's range (a setting of the FM-1) */
     [G_FXFADE] = PD("FADE", F_INT, 0, 15, 0),     /* 2.7.2: the punch-in FX fade (FX layer SELECT), 0 off .. 15 (punch.c) */
 };

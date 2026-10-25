@@ -1,3 +1,26 @@
+> **This is a fork: SLOOP 2.8.1 with a REMOTE OUT**, by [XOXO Audio Labs](https://github.com/xoxoaudiolabs), on the
+> `remote-out` branch. SLOOP is [isod89's](https://github.com/isod89/sloop-fm1); everything else here is theirs,
+> unchanged. For SLOOP itself, use [isod89/sloop-fm1](https://github.com/isod89/sloop-fm1) and its releases.
+>
+> **What it adds:** GLO › MIDI 3 › **REMOTE** goes from OFF / 1–16 to **OFF / IN 1–16 / OUT 1–16**. IN is SLOOP
+> 2.7's REMOTE as it was (the buttons from MIDI). **OUT n** sends the FM-1's panel on MIDI channel n as you play:
+> the 14 buttons as CC 102–115 in SLOOP's order (FX SEL ENV LFO EDIT GLO HOME SAVE ARP SEQ PLAY REC OCT- OCT+;
+> 127 down, 0 up, the same numbers REMOTE IN reads), the 7 knobs as CC 116–122 (SELECT ALGORITHM PRESETS KNOB 1–4;
+> 64 + the steps, so 65 is one click clockwise) and the 27 keys as notes 36–62. The FM-1 plays and shows everything
+> as always. It's made for [SLOOP Remote Out](https://github.com/xoxoaudiolabs/sloop-remote-out): SLOOP running on the
+> [FM-1 Companion](https://github.com/xoxoaudiolabs/FM-1-Companion) Studio, played from this FM-1.
+>
+> - 62 lines in `firmware/src` (`panel.c`, `ui_input.c`, `params.c`, `seq.c`, `project.c`, `core.h`); 368 bytes of
+>   flash (the image is 567,932 of 581,564 bytes). The setting keeps its byte: an official SLOOP reads OUT as OFF.
+> - A knob goes out when the page on screen reads it (where SLOOP takes its steps).
+> - **Tested** (2026-10-25): built with JieLi's toolchain and SDK V1.2.1 (the stock 2.8.1 built the same way
+>   matches isod89's release apart from the package header); SLOOP's host tests pass, apart from two
+>   ThreadSanitizer checks that fail the same way on unmodified SLOOP inside WSL; installed on a real FM-1 (backed
+>   up first); with OUT 16, its keys, buttons and knobs seen arriving on channel 16, driving SLOOP Remote Out.
+> - **Not tested:** every button and knob one by one (GLO, HOME, SELECT and KNOB 1–3 were seen); OUT on channels
+>   other than 16; REMOTE IN after this change (unchanged code, not re-tried on the FM-1).
+> - Build it as SLOOP builds ([BUILDING.md](BUILDING.md)); install the `.fwsc` like any SLOOP update.
+
 <p align="center"><img src="assets/logo/sloop-logo.png" alt="SLOOP" width="420"></p>
 
 <p align="center"><b>A live groovebox firmware for the M-VAVE FM-1 — for any style.</b><br>

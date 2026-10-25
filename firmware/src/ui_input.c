@@ -1067,7 +1067,8 @@ UI_SMALL static void remote_poll(void)
     static int16_t ch_was = -1;
     static uint8_t usb_was;
     uint32_t l, m = 0;
-    int drop = !song.g[G_RMCH] || (ch_was > 0 && song.g[G_RMCH] != ch_was) || (usb_was && !usb.config);
+    int drop = !song.g[G_RMCH] || song.g[G_RMCH] > 16 || (ch_was > 0 && song.g[G_RMCH] != ch_was) ||
+               (usb_was && !usb.config);              /* ((remote-out) REMOTE OUT: nothing comes in) */
     ch_was = song.g[G_RMCH];                        /* (OFF -> a channel: nothing held yet, what just came in stays) */
     usb_was = (uint8_t)(usb.config != 0);
     if (drop) {
@@ -1102,6 +1103,7 @@ UI_SMALL static void ui_input(void)
     if (pressed || notes)
         ui_input_ms = fm1_ms;
     remote_poll();                                      /* (2.7) the buttons over MIDI */
+    remote_out_poll();                                  /* (remote-out) the panel to MIDI */
     pc_poll();                                          /* MIDI Program Change: a sound (2.6, ui.c) */
     midi_chan_fix();                                    /* GLO > MIDI: no channel on two tracks (2.6, ui.c) */
     fm6_poll();                                         /* FM6: PTCH turned -> its patch */

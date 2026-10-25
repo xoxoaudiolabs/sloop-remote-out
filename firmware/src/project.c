@@ -923,7 +923,8 @@ UI_SMALL static void midi_part_read(const uint8_t *b, uint32_t n)
             flt_reso = 10u;
         song.g[G_DRMAP] = midi_set[7];
         song.g[G_CLKOUT] = midi_set[9];
-        midi_set[8] = (uint8_t)(b[2u * ML_N + 7u] <= 16u ? b[2u * ML_N + 7u] : 0u);   /* (2.7) REMOTE */
+        midi_set[8] = (uint8_t)(b[2u * ML_N + 7u] <= 32u ? b[2u * ML_N + 7u] : 0u);   /* (2.7) REMOTE ((remote-out) OUT:
+                                                                                       * 17..32; 2.7 reads it as OFF) */
         song.g[G_RMCH] = midi_set[8];
     }
     fm1_irq_on();

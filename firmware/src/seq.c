@@ -3138,7 +3138,8 @@ static void events_block(uint32_t n)
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
             continue;
         }
-        if (song.g[G_RMCH] && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u && d1 >= REMOTE_CC0 &&
+        if (song.g[G_RMCH] && song.g[G_RMCH] <= 16 && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u &&
+            d1 >= REMOTE_CC0 &&
             d1 < REMOTE_CC0 + 14u) {                  /* 2.7: REMOTE (GLO > MIDI 3): the buttons over MIDI */
             remote_cc(d1 - REMOTE_CC0, d2);
             continue;

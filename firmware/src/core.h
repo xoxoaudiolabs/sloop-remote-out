@@ -99,7 +99,8 @@ enum {                          /* global parameters */
     G_DRMAP,                    /* SLOOP 2.7, GLO > MIDI 3: how MIDI notes pick the drum sounds: 0 GM (the General MIDI notes, as
                                  * before), 1 1-16 (any 16 notes in a row: the 16 sounds in order, again each 16; seq.c
                                  * midi_drum_lane; a setting of the FM-1) */
-    G_RMCH,                     /* SLOOP 2.7, GLO > MIDI 3: REMOTE, the channel whose CCs 102..115 press the 14 buttons (0 OFF,
+    G_RMCH,                     /* SLOOP 2.7, GLO > MIDI 3: REMOTE, the channel whose CCs 102..115 press the 14 buttons
+                                 * ((remote-out) 1..16 IN on channel 1..16, 17..32 OUT on 1..16: panel.c remote_out_*) (0 OFF,
                                  * 1..16; seq.c remote_cc, ui_input.c remote_poll; a setting of the FM-1) */
     G_CLKOUT,                   /* SLOOP 2.7, GLO > MIDI 3: CLK OUT, the MIDI clock (24 a beat) and START / STOP out on USB
                                  * while SYNC is INT (seq.c clkout_block; a setting of the FM-1, kept in DR MAP's byte) */
