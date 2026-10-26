@@ -86,3 +86,20 @@ Clock with X0X (2026-10-25):
 
 GPL-3.0-only ([LICENSE](../LICENSE)), as SLOOP: this program is built from SLOOP's sources, by isod89
 ([isod89/sloop-fm1](https://github.com/isod89/sloop-fm1)), after Felucca by Leo Kuroshita / Hügelton Instruments.
+
+**What's ours in this fork:** `studio/` (this program), and SLOOP's REMOTE OUT (see [the repo's README](../README.md)).
+Everything else is SLOOP's, unchanged.
+
+**Built and run with** (on the Studio, from Raspberry Pi OS's packages; not copied into this repository, each
+under its own licence):
+
+| Software | What for | Licence |
+|---|---|---|
+| GCC | building it | GPL-3.0-or-later (what it builds isn't bound by it: the GCC Runtime Library Exception) |
+| the GNU C library (glibc), libm | linked into it | LGPL-2.1-or-later |
+| Python 3, with Pillow | SLOOP's build scripts that make its generated headers (fonts, icons, tables, samples) | PSF License; the PIL Software License (MIT-CMU) |
+| PipeWire (`pw-cat`) | its sound | MIT |
+| the Linux kernel (the framebuffer) | its screen | GPL-2.0 |
+
+The licences are each project's own, as Debian lists them in `/usr/share/doc/<package>/copyright`: that file is
+the one to go by.
