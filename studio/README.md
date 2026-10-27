@@ -42,9 +42,10 @@ tests use (`tests/ui_pages_test.c`). Nothing is emulated.
 It's built from this repo's SLOOP, one folder up: the same sources the FM-1 runs, so both SLOOPs match.
 
 ```sh
+sudo apt-get install -y git         # Raspberry Pi OS Lite comes without it (gcc and Pillow are there)
 git clone https://github.com/xoxoaudiolabs/sloop-remote-out
 cd sloop-remote-out/studio
-./build.sh                          # needs gcc and python3 with Pillow; about 2 minutes on a Pi 3 B+
+sh build.sh                         # needs gcc and python3 with Pillow; about 2 minutes on a Pi 3 B+
 mkdir -p ~/.local/share/sloop-remote-out && cp sloop-remote-out ~/.local/share/sloop-remote-out/
 ```
 
