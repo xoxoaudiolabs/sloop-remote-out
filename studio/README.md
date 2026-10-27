@@ -6,8 +6,8 @@ FM-1 Companion Studio (a Raspberry Pi 3 B+ with a 3.5" 480×320 touchscreen), pl
 It's SLOOP's own code: its sound engines, sequencer and screens, compiled for the Pi through the harness SLOOP's
 tests use (`tests/ui_pages_test.c`). Nothing is emulated.
 
-**Status:** works with the FM-1 Companion's Studio v1.4 or later; the shared clock with X0X (below) needs the
-Companion from its main branch after Studio v1.5. See *Tested* below for what has been tried on the real Studio.
+**Status:** works with the FM-1 Companion's Studio v1.4 or later; the shared clock with X0X and the backups
+(below) need Studio v1.6 or later. See *Tested* below for what has been tried on the real Studio.
 
 ## How it works
 
