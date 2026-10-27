@@ -2,9 +2,11 @@
 /* SLOOP on the FM-1 Companion Studio (a Raspberry Pi 3 B+ with a 3.5" 480x320 screen): SLOOP's own sound engine,
  * sequencer and screens, built from its sources through the harness its tests use (tests/ui_pages_test.c),
  * running natively on the Pi. Played from a real FM-1 whose SLOOP sends its panel over MIDI (the sloop-remote
- * fork: GLO > MIDI 3 > REMOTE = OUT n), which the Companion passes on through a FIFO.
+ * fork: GLO > MIDI 3 > REMOTE = OUT n), which the Companion passes on through a FIFO. SLOOP's own saving and its
+ * editor protocol run as on an FM-1 (sloop_harness.c).
  *
  *   sloop-remote-out --fb /dev/fb0 --midi /tmp/fm1-sloop-midi [--ch 16] [--state FILE] [--clock-out FIFO]...
+ *                    [--sysex-out FIFO]
  *
  *   screen  SLOOP's 240x240 picture at 4/3 (320x320) in the middle of the framebuffer, x 80..399; the margins
  *           are the Companion's. SIGUSR1 hides it (the Companion's "< HOME": SLOOP keeps running and playing,
@@ -12,12 +14,16 @@
  *   sound   44.1 kHz stereo into PipeWire (pw-cat), the Studio's speaker or jack
  *   panel   on MIDI channel --ch: CC 102 + label (127 down, 0 up) the 14 buttons in SLOOP's B_* order, CC 116 + role
  *           (64 + steps) the 7 knobs in EN_* order, notes 36..62 the 27 keys. Anything else is left alone
- *   state   the working project (SLOOP's own format, project.c: the tracks, their sounds and steps, the song's
- *           settings) in --state (default ~/.local/share/sloop-remote-out/project.bin): loaded at the start, written
- *           a few seconds after something changed and at the stop. The project slots, user presets and sample
- *           slots are still the harness's RAM: gone at the stop. Two of SLOOP's device settings, kept next to it
- *           in settings.bin: GLO > SYSTEM > SYNC and GLO > MIDI 3 > CLK OUT (on the Studio, CLK OUT starts ON:
- *           SLOOP leads the other apps' clock unless set otherwise)
+ *   state   everything SLOOP keeps in an FM-1's flash, kept as it keeps it, in flash.bin (a 1 MiB image of the
+ *           FM-1's SPI NOR, the same offsets and objects) in --state's folder (default
+ *           ~/.local/share/sloop-remote-out/): its settings, the working project, the four project slots, the
+ *           song's sections, user presets, the FM6 patch bank, the four sample slots. Changed sectors are written
+ *           to the file a moment after SLOOP writes them, and everything at the stop. The first time (no flash.bin
+ *           yet), the working project an older version kept in --state (project.bin) and its SYNC / CLK OUT
+ *           (settings.bin) are taken over; on the Studio CLK OUT starts ON (SLOOP leads the other apps' clock)
+ *   editor  SysEx in the FIFO goes to SLOOP's editor protocol (editor.c: the web editor's, and the FM-1 Companion
+ *           library's backups, restores, projects and samples), its replies to --sysex-out (a FIFO; with no reader
+ *           there, a reply is dropped)
  *   clock   MIDI clock and START / CONTINUE / STOP in the FIFO too (the clock only while its sender plays), as SLOOP takes them on USB (GLO > SYSTEM >
  *           SYNC = USB follows them); and what SLOOP sends as clock master on USB (GLO > MIDI 3 > CLK OUT, while
  *           SYNC is INT) written to each --clock-out FIFO (another app's --midi): the two cabled together, as two
@@ -31,10 +37,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#define UI_PAGES_HARNESS_ONLY 1
-#include "ui_pages_test.c"
-#define PROJ_HOST 1                     /* project.c's formats, capture and apply: no flash */
-#include "project.c"
+#include "sloop_harness.c"
 
 #define FB_W 480u
 #define VIEW_X 80u                      /* SLOOP's picture: 320x320 from here, the whole height */
@@ -48,92 +51,107 @@ static void on_signal(int s) { (void)s; stop = 1; }
 static void on_hide(int s) { (void)s; hidden = 1; }
 static void on_show(int s) { (void)s; hidden = 0; show_whole = 1; }
 
-/* ---- the working project, kept in a file ---- */
+/* ---- the flash: flash.bin, the FM-1's SPI NOR (sloop_harness.c's image) ---- */
 
 static const char *state_path;
-static project_t saved;                 /* what the file holds */
+static char flash_path[512];
 
-static void state_load(void)
+static int flash_open(void)             /* -> 1: a new image (nothing kept yet), 0: the file's, -1: failed */
 {
-    project_t p;
-    FILE *f = fopen(state_path, "rb");
-    uint32_t k;
-    if (!f)
-        return;
-    if (fread(&p, sizeof p, 1, f) == 1 && proj_ok(&p)) {   /* (as project.c autosave_resume) */
-        proj_apply(&p, 1);
-        song.sel = (uint8_t)(p.sel < NTRK ? p.sel : 0u);
-        for (k = 0; k < NPART; k++)
-            trk[k].engine = trk[k].eng_req;
-        saved = p;
-    }
-    fclose(f);
-}
-
-static void state_save(void)            /* when it changed: a new file put in place (never half a file) */
-{
-    project_t p;
-    char tmp[512];
-    FILE *f;
-    proj_capture(&p);
-    if (!memcmp(&p, &saved, sizeof p))
-        return;
-    snprintf(tmp, sizeof tmp, "%s.tmp", state_path);
-    f = fopen(tmp, "wb");
-    if (!f)
-        return;
-    if (fwrite(&p, sizeof p, 1, f) == 1 && fflush(f) == 0 && fsync(fileno(f)) == 0 && fclose(f) == 0) {
-        if (rename(tmp, state_path) == 0)
-            saved = p;
-        return;
-    }
-    fclose(f);
-}
-
-/* ---- SYNC and CLK OUT (on the FM-1, kept with its settings, project.c), kept in a file of their own ---- */
-
-#define SET_MAGIC 0x53455453u           /* "SETS" */
-static char set_path[512];
-static int16_t set_saved[2] = {-1, -1};
-
-static void clock_settings_load(void)
-{
-    uint32_t v[3] = {0, 0, 0};
     const char *slash = strrchr(state_path, '/');
-    FILE *f;
-    snprintf(set_path, sizeof set_path, "%.*s/settings.bin", slash ? (int)(slash - state_path) : 1,
+    struct stat st;
+    int fresh;
+    snprintf(flash_path, sizeof flash_path, "%.*s/flash.bin", slash ? (int)(slash - state_path) : 1,
              slash ? state_path : ".");
-    song.g[G_SYNC] = 0;                 /* the Studio's defaults: its own tempo, the clock sent to the others */
-    song.g[G_CLKOUT] = 1;
-    f = fopen(set_path, "rb");
-    if (f) {
-        if (fread(v, sizeof v, 1, f) == 1 && v[0] == SET_MAGIC && v[1] <= 2u && v[2] <= 1u) {
-            song.g[G_SYNC] = (int16_t)v[1];
-            song.g[G_CLKOUT] = (int16_t)v[2];
+    flash_img = malloc(FLASH_SIZE);
+    flash_fd = open(flash_path, O_RDWR | O_CREAT, 0644);
+    if (!flash_img || flash_fd < 0 || fstat(flash_fd, &st) < 0)
+        return -1;
+    fresh = st.st_size != (off_t)FLASH_SIZE || pread(flash_fd, flash_img, FLASH_SIZE, 0) != (ssize_t)FLASH_SIZE;
+    if (fresh) {                        /* an erased part: all ones */
+        memset(flash_img, 0xFF, FLASH_SIZE);
+        if (pwrite(flash_fd, flash_img, FLASH_SIZE, 0) != (ssize_t)FLASH_SIZE || fsync(flash_fd) < 0)
+            return -1;
+    }
+    return fresh;
+}
+
+static void flash_sync(void)            /* the sectors SLOOP changed, into the file (storage.c's A/B copies keep the
+                                         * last good one should a write be cut short, as on the FM-1) */
+{
+    uint32_t w, any = 0;
+    for (w = 0; w < sizeof flash_dirty / sizeof flash_dirty[0]; w++) {
+        while (flash_dirty[w]) {
+            uint32_t bit = (uint32_t)__builtin_ctz(flash_dirty[w]), off = (w * 32u + bit) * 0x1000u;
+            flash_dirty[w] &= flash_dirty[w] - 1u;
+            if (flash_fd >= 0 && pwrite(flash_fd, flash_img + off, 0x1000u, (off_t)off) == 0x1000)
+                any = 1;
+        }
+    }
+    if (any)
+        fdatasync(flash_fd);
+}
+
+static void take_over_old_files(void)   /* (once, into a new flash.bin) what an older version kept beside it */
+{
+    project_t p;
+    uint32_t v[3] = {0, 0, 1}, k;
+    char path[600];
+    const char *slash = strrchr(state_path, '/');
+    FILE *f = fopen(state_path, "rb");
+    if (f) {                            /* the working project (project.bin) */
+        if (fread(&p, sizeof p, 1, f) == 1 && proj_ok(&p)) {
+            proj_apply(&p, 1);
+            song.sel = (uint8_t)(p.sel < NTRK ? p.sel : 0u);
+            for (k = 0; k < NPART; k++)
+                trk[k].engine = trk[k].eng_req;
         }
         fclose(f);
     }
-    set_saved[0] = song.g[G_SYNC];
-    set_saved[1] = song.g[G_CLKOUT];
+    snprintf(path, sizeof path, "%.*s/settings.bin", slash ? (int)(slash - state_path) : 1, slash ? state_path : ".");
+    f = fopen(path, "rb");
+    if (f) {                            /* SYNC and CLK OUT (settings.bin: "SETS", sync, clk out) */
+        uint32_t r[3];
+        if (fread(r, sizeof r, 1, f) == 1 && r[0] == 0x53455453u && r[1] <= 2u && r[2] <= 1u)
+            v[1] = r[1], v[2] = r[2];
+        fclose(f);
+    }
+    lights_sync = (uint8_t)v[1];        /* the Studio's defaults otherwise: its own tempo, its clock sent */
+    midi_set[9] = (uint8_t)v[2];
+    song.g[G_SYNC] = (int16_t)lights_sync;
+    song.g[G_CLKOUT] = (int16_t)midi_set[9];
+    settings_save();
 }
 
-static void clock_settings_save(void)         /* when one changed */
+/* ---- the editor's replies: usb.c's SysEx ring, as bytes, to --sysex-out ---- */
+
+static const char *sx_path;
+static int sx_fd = -1;
+static uint64_t sx_tried;
+
+static uint64_t ms_now(void);
+
+static void sloop_studio_sysex_out(void)
 {
-    uint32_t v[3] = {SET_MAGIC, (uint32_t)song.g[G_SYNC], (uint32_t)song.g[G_CLKOUT]};
-    char tmp[600];
-    FILE *f;
-    if (song.g[G_SYNC] == set_saved[0] && song.g[G_CLKOUT] == set_saved[1])
-        return;
-    snprintf(tmp, sizeof tmp, "%s.tmp", set_path);
-    f = fopen(tmp, "wb");
-    if (!f)
-        return;
-    if (fwrite(v, sizeof v, 1, f) == 1 && fflush(f) == 0 && fsync(fileno(f)) == 0 && fclose(f) == 0) {
-        if (rename(tmp, set_path) == 0)
-            set_saved[0] = song.g[G_SYNC], set_saved[1] = song.g[G_CLKOUT];
-        return;
+    uint8_t buf[3 * SXQ];
+    uint32_t n = 0;
+    while (so_r != so_w) {
+        uint32_t pkt = sx_out_q[so_r % SXQ], cin = pkt & 15u, k = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
+        uint32_t j;
+        so_r++;
+        for (j = 0; j < k; j++)
+            buf[n++] = (uint8_t)(pkt >> (8u + 8u * j));
     }
-    fclose(f);
+    if (!n || !sx_path)
+        return;
+    if (sx_fd < 0 && ms_now() - sx_tried >= 200u) {
+        sx_tried = ms_now();
+        sx_fd = open(sx_path, O_WRONLY | O_NONBLOCK);  /* (ENXIO: nobody listening: the reply is dropped) */
+    }
+    if (sx_fd >= 0 && write(sx_fd, buf, n) < 0 && errno != EAGAIN) {
+        close(sx_fd);
+        sx_fd = -1;
+    }
 }
 
 static uint64_t ms_now(void)
@@ -230,6 +248,7 @@ static void clock_out_drain(uint64_t now)   /* SLOOP's USB MIDI out (usb.c's rin
 
 static uint8_t mbuf[3];
 static uint32_t mlen, mneed;
+static uint8_t in_sysex;
 
 static void midi_bytes(const uint8_t *p, ssize_t n)
 {
@@ -239,6 +258,12 @@ static void midi_bytes(const uint8_t *p, ssize_t n)
         if (b >= 0xF8u) {
             clock_in(b);                    /* real-time: the clock, not the panel's */
             continue;
+        }
+        if (b == 0xF0u || in_sysex) {       /* SysEx: SLOOP's editor protocol, through usb.c as from USB */
+            in_sysex = b != 0xF7u && (b == 0xF0u || !(b & 0x80u));
+            sysex_byte(b);
+            if (in_sysex || b == 0xF7u)
+                continue;
         }
         if (b & 0x80u) {
             mbuf[0] = b, mlen = 1;
@@ -317,6 +342,7 @@ static void render(void)                /* FRAME_BLOCKS of audio to PipeWire, MI
         fm1_ms = (uint32_t)(now - t0);
         mix_block(o, CTL);
         clock_out_drain(now);
+        sloop_studio_sysex_out();
         for (i = 1; i < CTL; i += 2u) {     /* the scope, as audio.c fills it (the visualiser) */
             scope_bufr[scope_w & (SCOPE_N - 1u)] = vis_tap[2u * i + 1u];
             scope_buf[scope_w++ & (SCOPE_N - 1u)] = vis_tap[2u * i];
@@ -330,12 +356,47 @@ static void render(void)                /* FRAME_BLOCKS of audio to PipeWire, MI
     }
 }
 
+/* power-on, as felucca_init (main.c) starts SLOOP: the default sounds, the drum track, empty patterns, then the
+ * working project as it was left, and the FM-1's settings */
+static void studio_init(void)
+{
+    uint32_t i;
+    for (i = 0; i < G_COUNT; i++)
+        song.g[i] = GP[i].def;
+    fm6_init();
+    for (i = 0; i < NTRK; i++) {
+        track_t *t = &trk[i];
+        track_defaults(t);
+        if (i < NPART) {
+            set_engine_of(t, TRK_DEF[i][0]);
+            apply_preset_to(t, TRK_DEF[i][1]);
+            t->engine = t->eng_req;
+        }
+        track_defaults_steps(t);
+    }
+    TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
+    song.sel = 0;
+    song.master_q12 = 2048;
+    autosave_resume();
+    song.g[G_SYNC] = (int16_t)lights_sync;
+    song.g[G_MIDI] = (int16_t)lights_mout;
+    song.g[G_ROUTE] = (int16_t)lights_min;
+    song.g[G_CH1] = midi_set[0], song.g[G_CH2] = midi_set[1], song.g[G_CH3] = midi_set[2];
+    song.g[G_DRCH] = midi_set[3], song.g[G_CHOTH] = midi_set[4], song.g[G_BEND] = midi_set[5];
+    song.g[G_FXCH] = midi_set[6];
+    song.g[G_DRMAP] = midi_set[7];
+    song.g[G_CLKOUT] = midi_set[9];
+    song.g[G_RMCH] = midi_set[8];
+    song.g[G_FXFADE] = fxfade;
+    layers_init();
+}
+
 int main(int argc, char **argv)
 {
     const char *fb_path = "/dev/fb0", *midi_path = "/tmp/fm1-sloop-midi";
     static char state_default[512];
-    uint64_t next_save;
-    int i;
+    uint64_t next_sync;
+    int i, fresh;
     for (i = 1; i + 1 < argc; i += 2) {
         if (!strcmp(argv[i], "--fb"))
             fb_path = argv[i + 1];
@@ -345,6 +406,8 @@ int main(int argc, char **argv)
             remote_ch = (uint32_t)atoi(argv[i + 1]) - 1u;
         else if (!strcmp(argv[i], "--state"))
             state_path = argv[i + 1];
+        else if (!strcmp(argv[i], "--sysex-out"))
+            sx_path = argv[i + 1];
         else if (!strcmp(argv[i], "--clock-out") && nclk < NCLK) {
             clk_out[nclk].path = argv[i + 1];
             clk_out[nclk++].fd = -1;
@@ -370,21 +433,19 @@ int main(int argc, char **argv)
     midi = open(midi_path, O_RDONLY | O_NONBLOCK);  /* (read-write would keep it open with no writer; this end
                                                      * just reads nothing until the Companion writes) */
 
-    /* as the harness starts SLOOP (ui_pages_test.c main) */
-    panel = PANEL_DEFAULT;
-    layers_init();
-    settings.palette = 4;
-    palette_set(4);
-    host_tracks_init();
-    for (i = 0; i < (int)NPART; i++) {
-        set_engine_of(&trk[i], TRK_DEF[i][0]);
-        apply_preset_to(&trk[i], TRK_DEF[i][1]);
-        trk[i].engine = trk[i].eng_req;
+    fresh = flash_open();
+    if (fresh < 0) {
+        fprintf(stderr, "sloop-remote-out: %s: %s\n", flash_path, strerror(errno));
+        return 1;
     }
-    TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
-    usb.config = 1;                         /* "connected": SLOOP's USB MIDI out queues (clock_out_drain takes it) */
-    state_load();                           /* as it was left */
-    clock_settings_load();
+    /* as SLOOP starts on the FM-1 (main.c fm1_main): the flash's settings, then the project */
+    panel = PANEL_DEFAULT;
+    persist_boot();
+    settings_init();
+    studio_init();
+    if (fresh)
+        take_over_old_files();
+    usb.config = 1;                         /* "connected": SLOOP's USB MIDI and SysEx out queue (drained here) */
     sloop_splash();
     blit();
     go_home();
@@ -392,7 +453,7 @@ int main(int argc, char **argv)
 
     open_sound();
     t0 = ms_now();
-    next_save = t0 + 5000u;
+    next_sync = t0 + 1000u;
     while (!stop) {
         render();
         fm1_ms = (uint32_t)(ms_now() - t0);
@@ -407,16 +468,19 @@ int main(int argc, char **argv)
             ui_draw();
             blit();
         }
-        if (ms_now() >= next_save) {
-            state_save();
-            clock_settings_save();
-            next_save = ms_now() + 5000u;
+        ed_service();                       /* the editor's SysEx (main.c's loop) */
+        sloop_studio_sysex_out();
+        autosave_tick();                    /* the working project into the flash, when quiet */
+        sections_flush();                   /* live sections / the recorded song, when quiet */
+        if (ms_now() >= next_sync) {
+            flash_sync();
+            next_sync = ms_now() + 1000u;
         }
         if (!pcm)                           /* no PipeWire: keep time without it */
             usleep(16000);
     }
-    state_save();
-    clock_settings_save();
+    persist_flush_now();                    /* what's only in RAM so far (as before an update) */
+    flash_sync();
     if (pcm)
         pclose(pcm);
     return 0;

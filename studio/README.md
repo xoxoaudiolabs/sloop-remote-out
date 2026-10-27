@@ -19,10 +19,16 @@ Companion from its main branch after Studio v1.5. See *Tested* below for what ha
 - **Control:** a real FM-1 running this repo's SLOOP (SLOOP with a REMOTE OUT: [the repo's README](../README.md)),
   with GLO › MIDI 3 › REMOTE set to **OUT 16**. Its 14 buttons (CC 102–115), 7 knobs (CC 116–122, relative) and 27 keys
   (notes 36–62) go out on channel 16; the Companion passes FM-1 A's MIDI to this program through a FIFO.
-- **Saved:** the working project (tracks, sounds, steps, the song's settings, in SLOOP's own project format) in
-  `~/.local/share/sloop-remote-out/project.bin`, a few seconds after a change and when it stops; loaded at the start.
-  SLOOP's four project slots, user presets and sample slots are not saved yet. Two of SLOOP's device settings are
-  kept next to it in `settings.bin`: GLO › SYSTEM › SYNC and GLO › MIDI 3 › CLK OUT.
+- **Saved:** everything SLOOP keeps in an FM-1's flash, kept the way it keeps it: SLOOP's own saving code
+  (`storage.c`, `project.c`, `upreset.c`) on `~/.local/share/sloop-remote-out/flash.bin`, a 1 MiB image of the FM-1's
+  flash with the same layout. Its settings (SYNC and CLK OUT among them), the working project, the four project
+  slots, the song's sections, user presets, the FM6 patches and the four sample slots. Changed parts are written to
+  the file about a second after SLOOP writes them, and all of it when it stops. The first time, the working project
+  and the SYNC / CLK OUT that earlier versions kept (`project.bin`, `settings.bin`) are taken over.
+- **Backups:** SLOOP's editor protocol (`editor.c`, what SLOOP's web editor and the FM-1 Companion's library speak)
+  answers through the MIDI FIFO, replies going to a second one (`--sysex-out`). The Companion's backups, restores,
+  projects and samples for an FM-1 work on it unchanged (Settings › Sloop › For: SLOOP Studio), with the same files.
+  `sloop_harness.c` builds it: the harness SLOOP's tests use, with SLOOP's real saving in place of its stand-ins.
 - **Clock, with another app on the Studio** (such as
   [X0X for the FM-1 Companion Studio](https://github.com/xoxoaudiolabs/fm1-x0x-companion-studio)): the Companion
   runs both at once and connects each one's MIDI clock to the other, as two FM-1s cabled both ways. On the Studio,
@@ -47,6 +53,10 @@ The [FM-1 Companion](https://github.com/xoxoaudiolabs/FM-1-Companion) (Studio v1
 REMOTE to **OUT 16**.
 
 ## Tested
+
+**Hardware used:** the FM-1 Companion Studio (a Raspberry Pi 3 B+ on Raspberry Pi OS Lite, Trixie, with the Hosyond
+3.5" touchscreen), FM-1 A running SLOOP Remote Out (SLOOP 2.8.1 with REMOTE OUT, REMOTE on OUT 16), a JBL Go 3 over
+Bluetooth and headphones on the Studio's 3.5 mm jack.
 
 First on the real Studio (2026-10-25) with the panel messages sent by a script:
 
@@ -76,7 +86,22 @@ Clock with X0X (2026-10-25):
   X0Xs, one following the other, in one recording: the follower 9–13 ms after the leader on average, about 8–9 ms
   of jitter. X0X kept a steady beat while SLOOP was opened and closed next to it.
 
+Saving and backups (2026-10-26), by script on the Studio in test sessions, not yet by hand:
+- SLOOP's editor protocol through the FIFOs: INFO (SLOOP 2.8.1, protocol 12), a whole backup with the Companion's
+  `sloop.py`.
+- A real FM-1 A backup restored with the Companion's own restore job; a backup right after it matched, all 16
+  parts (projects, settings, drum kits, MIDI map, theme, the four sample slots).
+- A WAV loaded into USR2 with the Companion's load-sample job, seen in the next backup.
+- A project loaded into slot B, still there after SLOOP was stopped and started again (from `flash.bin`).
+- The working project of an earlier version (`project.bin`) taken over with the same screen, then loaded from
+  `flash.bin` alone.
+
 **Not tested yet:**
+- Any of the saving and backups by hand: SLOOP's own SAVE and LOAD of its project slots on its screen, the
+  Companion's rows on the Studio's screen.
+- A sample loaded into a slot heard playing.
+- A backup of the Studio's SLOOP restored onto a real FM-1.
+- SLOOP stopped in the middle of a backup or restore.
 - The MIXER tab's SLOOP slider; the project loading back after a reboot of the Studio.
 - SLOOP following X0X (SYNC on USB) by hand: only by the script.
 - Turning off the leading app (HOLD OFF) while both play: the other should carry on at its own tempo, after a
